@@ -2,50 +2,47 @@
 FROM php:8.1-fpm as php
 
 
-# Install dependencies.
-RUN apt-get update && apt-get install -y unzip libpq-dev libcurl4-gnutls-dev nginx libonig-dev
-
-# Install PHP extensions.
-RUN docker-php-ext-install mysqli pdo pdo_mysql bcmath curl opcache mbstring
-
-# Copy composer executable.
-COPY --from=composer:2.3.5 /usr/bin/composer /usr/bin/composer
-
-# Copy configuration files.
-COPY ./docker/php/php.ini /usr/local/etc/php/php.ini
-COPY ./docker/php/php-fpm.conf /usr/local/etc/php-fpm.d/www.conf
-COPY ./docker/nginx/nginx.conf /etc/nginx/nginx.conf
-
+# Copy composer.lock and composer.json
+COPY composer.lock composer.json /var/www/
 
 # Set working directory
 WORKDIR /var/www
 
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpng-dev \
+    libjpeg62-turbo-dev \
+    libfreetype6-dev \
+    locales \
+    zip \
+    jpegoptim optipng pngquant gifsicle \
+    vim \
+    unzip \
+    git \
+    curl \
+    libzip-dev
 
-# Copy files from current folder to container current folder (set in workdir).
-COPY --chown=www-data:www-data . .
+# Clear cache
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Create laravel caching folders.
-RUN mkdir -p /var/www/storage/framework
-RUN mkdir -p /var/www/storage/framework/cache
-RUN mkdir -p /var/www/storage/framework/testing
-RUN mkdir -p /var/www/storage/framework/sessions
-RUN mkdir -p /var/www/storage/framework/views
+# Install extensions
+RUN docker-php-ext-install pdo_mysql mbstring zip exif pcntl
+RUN docker-php-ext-configure gd --with-gd --with-freetype-dir=/usr/include/ --with-jpeg-dir=/usr/include/ --with-png-dir=/usr/include/
+RUN docker-php-ext-install gd
 
-# Fix files ownership.
-RUN chown -R www-data /var/www/storage
-RUN chown -R www-data /var/www/storage/framework
-RUN chown -R www-data /var/www/storage/framework/sessions
+# Install composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
-# Set correct permission.
-RUN chmod -R 755 /var/www/storage
-RUN chmod -R 755 /var/www/storage/logs
-RUN chmod -R 755 /var/www/storage/framework
-RUN chmod -R 755 /var/www/storage/framework/sessions
-RUN chmod -R 755 /var/www/bootstrap
+# Add user for laravel application
+RUN groupadd -g 1000 www
+RUN useradd -u 1000 -ms /bin/bash -g www www
 
-# Adjust user permission & group
-RUN usermod --uid 1000 www-data
-RUN groupmod --gid 1001 www-data
+# Copy existing application directory contents
+COPY . /var/www
+
+# Copy existing application directory permissions
+COPY --chown=www:www . /var/www
 
 # Change current user to www
 USER www
